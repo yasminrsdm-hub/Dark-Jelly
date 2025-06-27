@@ -27,5 +27,5 @@ df_clean["Aglomerados_Contidos"] = df_clean["M200c_10^10Msun/h"].apply(identific
 
 # Salva CSV
 df_clean.to_csv("gemeas_tng100_m200_com_aglomerados.csv", index=False)
-print("✅ Arquivo salvo: gemeas_tng100_m200_com_aglomerados.csv")
+print(" Arquivo salvo: gemeas_tng100_m200_com_aglomerados.csv")
 
