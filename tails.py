@@ -1,133 +1,211 @@
 import requests
-import os
-import numpy as np
 import h5py
-import pandas as pd
+import numpy as np
 import matplotlib.pyplot as plt
+from matplotlib.colors import LogNorm
+from matplotlib.patches import Circle
+import os
+import io
 
-BASE_URL = "https://www.tng-project.org/api/TNG50-1"
-API_KEY = "4ff6dd78476d70518200141e4f2e2268"  
-HEADERS = {"api-key": API_KEY}
+# --- 1. CONFIGURATION ---
 
-# === Lista de subhalos e snapshot final (último snapshot visível de cada galáxia) ===
-GALAXIAS = [
-    {"final_snap": 76, "id": 81875},
-    {"final_snap": 81, "id": 55542},
-    {"final_snap": 80, "id": 56443},
-    {"final_snap": 79, "id": 56566},
-    {"final_snap": 68, "id": 53742},
-    {"final_snap": 82, "id": 97770},
-    {"final_snap": 95, "id": 99952},
+API_KEY = "4ff6dd78476d70518200141e4f2e2268"
+
+SIMULATION = 'TNG100-1'
+BASE_URL = f'https://www.tng-project.org/api/{SIMULATION}/'
+
+GALAXIES_TO_TRACK = [
+    {"final_snap": 67, "id": 107813},
+    {"final_snap": 67, "id": 74123},
+    {"final_snap": 72, "id": 96419},
+    {"final_snap": 72, "id": 70711},
+    {"final_snap": 84, "id": 132263},
+    {"final_snap": 99, "id": 108037},
+    {"final_snap": 99, "id": 125033},
+    {"final_snap": 99, "id": 143888},
+    {"final_snap": 91, "id": 124318},
+    {"final_snap": 91, "id": 139737},
+    {"final_snap": 99, "id": 158854},
+    {"final_snap": 91, "id": 141670},
+    {"final_snap": 84, "id": 130203},
+    {"final_snap": 84, "id": 140404},
+    {"final_snap": 78, "id": 124397},
+    {"final_snap": 91, "id": 168847},
+    {"final_snap": 84, "id": 144300},
+    {"final_snap": 78, "id": 148900},
+    {"final_snap": 99, "id": 227576},
+    {"final_snap": 99, "id": 235696},
+    {"final_snap": 99, "id": 281704},
+    {"final_snap": 99, "id": 314772},
 ]
 
-SNAP_INICIAL = 67
-os.makedirs("cutouts", exist_ok=True)
 
-def get_main_progenitor(subhalo_id, snap):
-    url = f"{BASE_URL}/snapshots/{snap}/subhalos/{subhalo_id}/sublink_descendant/"
-    r = requests.get(url, headers=HEADERS)
-    if r.status_code == 200 and r.json():
-        return r.json()
-    return None
+START_SNAP = 67
+PLOT_SIZE_CKPC = 60
+RESOLUTION_PIXELS = 400
+SFR_MIN = 1e-6
+SFR_MAX = 1e-1
 
-def baixar_cutout(snapshot, subhalo_id):
-    path = f"cutouts/snap{snapshot}_subhalo{subhalo_id}.hdf5"
-    if os.path.exists(path):
-        return path
+# --- 2. HELPER FUNCTIONS ---
 
-    url = f"{BASE_URL}/snapshots/{snapshot}/subhalos/{subhalo_id}/cutout.hdf5?gas=Coordinates,StarFormationRate"
-    r = requests.get(url, headers=HEADERS)
-    if r.status_code == 200:
-        with open(path, "wb") as f:
-            f.write(r.content)
-        return path
-    else:
-        print(f"Erro no cutout snapshot {snapshot} subhalo {subhalo_id}: {r.status_code}")
-        return None
+def get_api_data(url):
+    headers = {"api-key": API_KEY}
+    r = requests.get(url, headers=headers)
+    r.raise_for_status()
+    return r.json()
 
-def get_detalhes(snapshot, subhalo_id):
-    url = f"{BASE_URL}/snapshots/{snapshot}/subhalos/{subhalo_id}/"
-    r = requests.get(url, headers=HEADERS)
-    if r.status_code == 200:
-        return r.json()
-    return None
+def get_snapshot_data(snap_num, subhalo_id):
+    subhalo_url = f"{BASE_URL}snapshots/{snap_num}/subhalos/{subhalo_id}/"
+    subhalo_details = get_api_data(subhalo_url)
 
-def analisar_sfr_cauda(filepath, centro, limite_disco):
-    with h5py.File(filepath, "r") as f:
-        if "PartType0" not in f:
-            return 0.0
+    cutout_url = subhalo_details['cutouts'].get('subhalo') or subhalo_details['cutouts']['parent_halo']
+    cutout_request = {'gas': 'all', 'stars': 'all'}
+    headers = {"api-key": API_KEY}
 
-        coords = f["PartType0"]["Coordinates"][:]
-        sfr = f["PartType0"]["StarFormationRate"][:]
+    response = requests.get(cutout_url, headers=headers, params=cutout_request)
+    response.raise_for_status()
 
-    mask = sfr > 0
-    coords = coords[mask]
-    sfr = sfr[mask]
-    if len(sfr) == 0:
-        return 0.0
+    with h5py.File(io.BytesIO(response.content), "r") as f:
+        gas_data = {}
+        star_data = {}
+        if 'PartType0' in f:
+            gas_data = {key: f['PartType0'][key][:] for key in f['PartType0'].keys()}
+        if 'PartType4' in f:
+            star_data = {key: f['PartType4'][key][:] for key in f['PartType4'].keys()}
+        header = {key: val for key, val in f['Header'].attrs.items()}
 
-    dist = np.linalg.norm(coords - centro, axis=1)
-    mask_cauda = dist > limite_disco
-    return sfr[mask_cauda].sum()
+    return subhalo_details, gas_data, star_data, header
 
-# === LOOP PRINCIPAL ===
-dados = []
+def get_surface_density_map(coords, weights, plot_range, pixels, center_pos, box_size):
+    dx = coords[:, 0] - center_pos[0]
+    dy = coords[:, 1] - center_pos[1]
+    dx[dx > box_size/2] -= box_size
+    dx[dx < -box_size/2] += box_size
+    dy[dy > box_size/2] -= box_size
+    dy[dy < -box_size/2] += box_size
 
-for gal in GALAXIAS:
-    snap = gal["final_snap"]
-    subhalo_id = gal["id"]
-    gal_id = f"{subhalo_id}_z{snap}"
+    pixel_area_kpc2 = (plot_range / pixels)**2
 
-    caminho = []
-    print(f"\n== Rastreamento da galáxia {gal_id} ==")
+    hist, _, _ = np.histogram2d(
+        dx, dy,
+        bins=pixels,
+        range=[[-plot_range/2, plot_range/2], [-plot_range/2, plot_range/2]],
+        weights=weights
+    )
+    return hist.T / pixel_area_kpc2
 
-    while snap >= SNAP_INICIAL:
-        detalhes = get_detalhes(snap, subhalo_id)
-        if not detalhes:
+# --- 3. MAIN PROCESSING LOOP ---
+
+output_dir_main = "galaxy_evolution_plots"
+os.makedirs(output_dir_main, exist_ok=True)
+
+for g in GALAXIES_TO_TRACK:
+    final_snap = g['final_snap']
+    final_id = g['id']
+    galaxy_output_dir = os.path.join(output_dir_main, f"galaxy_{final_id}_history")
+    os.makedirs(galaxy_output_dir, exist_ok=True)
+
+    print(f"\n--- Tracking Galaxy {final_id} from snap {final_snap} back to {START_SNAP} ---")
+
+    current_snap = final_snap
+    current_id = final_id
+
+    while current_snap >= START_SNAP and current_id != -1:
+        print(f"  Processing Snapshot: {current_snap}, Subhalo ID: {current_id}")
+        try:
+            subhalo_cat, gas_data, star_data, header = get_snapshot_data(current_snap, current_id)
+            redshift = header['Redshift']
+            box_size = header['BoxSize']
+
+            # Use correct position fields
+            if 'pos_x' in subhalo_cat and 'pos_y' in subhalo_cat and 'pos_z' in subhalo_cat:
+                subhalo_pos = np.array([subhalo_cat['pos_x'], subhalo_cat['pos_y'], subhalo_cat['pos_z']])
+            elif 'cm_x' in subhalo_cat and 'cm_y' in subhalo_cat and 'cm_z' in subhalo_cat:
+                subhalo_pos = np.array([subhalo_cat['cm_x'], subhalo_cat['cm_y'], subhalo_cat['cm_z']])
+            else:
+                raise KeyError("No position keys found in subhalo_cat")
+
+            # Stellar mass log (use mass_log_msun if available)
+            stellar_mass_log = subhalo_cat.get("mass_log_msun", 0.0)
+
+            # Half mass radius of stars
+            half_mass_rad_stars = subhalo_cat.get('halfmassrad_stars', 0.0)
+            r_dist = 2 * half_mass_rad_stars
+
+            if 'StarFormationRate' not in gas_data or len(gas_data['StarFormationRate']) == 0:
+                print("    Warning: No gas with SFR. Skipping plot.")
+                current_id = int(subhalo_cat['related']['sublink_progenitor'].split('/')[-2])
+                current_snap -= 1
+                continue
+
+            sfr_values = gas_data['StarFormationRate']
+            sfr_map = get_surface_density_map(gas_data['Coordinates'], sfr_values, PLOT_SIZE_CKPC, RESOLUTION_PIXELS, subhalo_pos, box_size)
+            sfr_map[sfr_map <= 0] = 1e-10
+
+            if 'Masses' not in star_data or len(star_data['Masses']) == 0:
+                print("    Warning: No star particles found.")
+                peak_stellar_density = 0
+                stellar_mass_map = np.zeros_like(sfr_map)
+            else:
+                star_masses = star_data['Masses'] * 1e10 / header['HubbleParam']
+                stellar_mass_map = get_surface_density_map(star_data['Coordinates'], star_masses, PLOT_SIZE_CKPC, RESOLUTION_PIXELS, subhalo_pos, box_size)
+                peak_stellar_density = np.max(stellar_mass_map)
+
+            contour_levels = [
+                0.6 * peak_stellar_density,
+                0.7 * peak_stellar_density,
+                0.8 * peak_stellar_density
+            ] if peak_stellar_density > 0 else []
+
+            fig, ax = plt.subplots(figsize=(6, 6), facecolor='black')
+            ax.set_facecolor('black')
+
+            ax.imshow(sfr_map, origin='lower',
+                      extent=[-PLOT_SIZE_CKPC/2, PLOT_SIZE_CKPC/2, -PLOT_SIZE_CKPC/2, PLOT_SIZE_CKPC/2],
+                      cmap='inferno', norm=LogNorm(vmin=SFR_MIN, vmax=SFR_MAX))
+
+            if contour_levels:
+                ax.contour(stellar_mass_map, levels=contour_levels, colors='cyan', linewidths=0.5, alpha=0.6,
+                           extent=[-PLOT_SIZE_CKPC/2, PLOT_SIZE_CKPC/2, -PLOT_SIZE_CKPC/2, PLOT_SIZE_CKPC/2])
+
+            ax.add_patch(Circle((0, 0), r_dist, edgecolor='turquoise', facecolor='none', linewidth=1.5, linestyle='--'))
+
+            ax.text(0.05, 0.95, f'TNG50-1\nlog M$_*$ = {stellar_mass_log:.1f}\nz = {redshift:.2f}, ID = {current_id}',
+                    transform=ax.transAxes, ha='left', va='top', color='white', fontsize=10)
+
+            ax.plot([-PLOT_SIZE_CKPC/2 + 5, -PLOT_SIZE_CKPC/2 + 15], [-PLOT_SIZE_CKPC/2 + 5, -PLOT_SIZE_CKPC/2 + 5],
+                    color='white', linewidth=2)
+            ax.text(-PLOT_SIZE_CKPC/2 + 5, -PLOT_SIZE_CKPC/2 + 7, '10 ckpc', color='white', fontsize=9)
+
+            ax.set_xticks([])
+            ax.set_yticks([])
+            ax.set_xlim(-PLOT_SIZE_CKPC/2, PLOT_SIZE_CKPC/2)
+            ax.set_ylim(-PLOT_SIZE_CKPC/2, PLOT_SIZE_CKPC/2)
+
+            plt.tight_layout()
+            output_filename = os.path.join(galaxy_output_dir, f"snap_{current_snap:03d}_id_{current_id}.png")
+            plt.savefig(output_filename, dpi=150, facecolor='black')
+            plt.close(fig)
+
+            print(f"    -> Saved plot to {output_filename}")
+
+            # Get progenitor ID for next iteration
+            prog_url = subhalo_cat['related']['sublink_progenitor']
+            if prog_url == "http://www.tng-project.org/api/null":
+                break
+            current_id = int(prog_url.rstrip('/').split('/')[-1])
+            current_snap -= 1
+
+        except requests.exceptions.HTTPError as e:
+            print(f"    HTTP ERROR: Subhalo {current_id} at snapshot {current_snap}: {e}")
+            break
+        except Exception as e:
+            print(f"    ERROR: {e}")
             break
 
-        centro = np.array([detalhes["pos_x"], detalhes["pos_y"], detalhes["pos_z"]])
-        limite_disco = detalhes.get("halfmassrad_dm", 15.0)
+    print(f"--- Finished tracking for galaxy ID {final_id} ---")
 
-        hdf5_path = baixar_cutout(snap, subhalo_id)
-        if not hdf5_path:
-            break
-
-        sfr_cauda = analisar_sfr_cauda(hdf5_path, centro, limite_disco)
-        dados.append({
-            "galaxy": gal_id,
-            "snapshot": snap,
-            "subhalo_id": subhalo_id,
-            "sfr_tail": sfr_cauda
-        })
-
-        # Busca o progenitor no snapshot anterior
-        prog = get_main_progenitor(subhalo_id, snap)
-        if not prog:
-            break
-
-        subhalo_id = prog["id"]
-        snap = prog["snap"]
-
-# === SALVA EM CSV ===
-df = pd.DataFrame(dados)
-df.sort_values(by=["galaxy", "snapshot"], inplace=True)
-csv_path = "sfr_tails_results_real.csv"
-df.to_csv(csv_path, index=False)
-print(f"\n📁 Resultados salvos em: {csv_path}")
-
-# === PLOT ===
-plt.figure(figsize=(10, 6))
-for gal_id, grupo in df.groupby("galaxy"):
-    plt.plot(grupo["snapshot"], grupo["sfr_tail"], marker="o", label=gal_id)
-plt.xlabel("Snapshot")
-plt.ylabel("SFR na Cauda [M☉/yr]")
-plt.title("Evolução da SFR na Cauda por Galáxia")
-plt.legend()
-plt.grid(True)
-plt.tight_layout()
-plt.savefig("sfr_tails_evolution_real.png")
-plt.show()
+print("\nAll processing complete.")
 
 
 
