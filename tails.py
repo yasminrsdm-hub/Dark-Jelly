@@ -170,7 +170,7 @@ for g in GALAXIES_TO_TRACK:
 
             ax.add_patch(Circle((0, 0), r_dist, edgecolor='turquoise', facecolor='none', linewidth=1.5, linestyle='--'))
 
-            ax.text(0.05, 0.95, f'TNG50-1\nlog M$_*$ = {stellar_mass_log:.1f}\nz = {redshift:.2f}, ID = {current_id}',
+            ax.text(0.05, 0.95, f'TNG100-1\nlog M$_*$ = {stellar_mass_log:.1f}\nz = {redshift:.2f}, ID = {current_id}',
                     transform=ax.transAxes, ha='left', va='top', color='white', fontsize=10)
 
             ax.plot([-PLOT_SIZE_CKPC/2 + 5, -PLOT_SIZE_CKPC/2 + 15], [-PLOT_SIZE_CKPC/2 + 5, -PLOT_SIZE_CKPC/2 + 5],
