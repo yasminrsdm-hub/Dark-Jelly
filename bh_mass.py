@@ -2,41 +2,50 @@ import requests
 import matplotlib.pyplot as plt
 import pandas as pd
 
+# --- Configuration ---
+
 base_url = 'http://www.tng-project.org/api/TNG100-1'
-token = '4ff6dd78476d70518200141e4f2e2268'  # seu token válido
+token = '4ff6dd78476d70518200141e4f2e2268'  # your valid API token
 
 headers = {
     'Accept': 'application/json',
     'api-key': token
 }
 
+# --- Functions to access data ---
+
 def get_subhalo_data(snap, subhalo_id):
+    """Fetches data for a specific subhalo at a given snapshot."""
     url = f'{base_url}/snapshots/{snap}/subhalos/{subhalo_id}/'
     r = requests.get(url, headers=headers, verify=False)
     if r.status_code == 200:
         return r.json()
     else:
-        print(f'Erro na requisição snap {snap} id {subhalo_id}:', r.status_code)
+        print(f'Error fetching snapshot {snap}, subhalo {subhalo_id}:', r.status_code)
         return None
 
 def get_snapshot_redshift(snap):
+    """Fetches the redshift of a given snapshot."""
     url = f'{base_url}/snapshots/{snap}/'
     r = requests.get(url, headers=headers, verify=False)
     if r.status_code == 200:
         return r.json()['redshift']
     else:
-        print(f'Erro na requisição snapshot {snap}:', r.status_code)
+        print(f'Error fetching snapshot {snap}:', r.status_code)
         return None
 
-# Subhalo e snapshot inicial
+# --- Initial subhalo and snapshot ---
+
 snap = 99
 subhalo = 227576
 
 bh_mass = []
 redshifts = []
 
+# --- Loop through progenitors to track black hole mass evolution ---
+
 while snap != -1 and subhalo != -1:
-    print(f'Pegando snap {snap}, subhalo {subhalo}')
+    print(f'Fetching snap {snap}, subhalo {subhalo}')
     data = get_subhalo_data(snap, subhalo)
     if data is None:
         break
@@ -51,11 +60,11 @@ while snap != -1 and subhalo != -1:
     snap = data.get('prog_snap', -1)
     subhalo = data.get('prog_sfid', -1)
 
-# Inverte as listas (do passado para o presente)
+# Reverse the lists (from past to present)
 bh_mass = bh_mass[::-1]
 redshifts = redshifts[::-1]
 
-# Salvar CSV
+# --- Save to CSV ---
 df = pd.DataFrame({
     'redshift': redshifts,
     'bh_mass': bh_mass
@@ -63,19 +72,20 @@ df = pd.DataFrame({
 
 csv_filename = 'bh_mass_evolution.csv'
 df.to_csv(csv_filename, index=False)
-print(f'Dados salvos em {csv_filename}')
+print(f'Data saved to {csv_filename}')
 
-# Plot
+# --- Plotting ---
 plt.figure(figsize=(8,6))
 plt.plot(redshifts, bh_mass, marker='o', color='black')
 plt.xlabel('Redshift (z)')
-plt.ylabel('Massa do Buraco Negro Central [$10^{10} M_\\odot / h$]')
-plt.title('Evolução da Massa do Buraco Negro Central da Galáxia')
+plt.ylabel('Central Black Hole Mass [$10^{10} M_\\odot / h$]')
+plt.title('Evolution of Central Black Hole Mass of the Galaxy')
 plt.gca().invert_xaxis()
 plt.grid(True)
 plt.tight_layout()
 plt.savefig('bh_mass_evolution.png')
 plt.show()
 
-print('Gráfico salvo como bh_mass_evolution.png')
+print('Plot saved as bh_mass_evolution.png')
+
 
