@@ -4,7 +4,7 @@ import matplotlib.pyplot as plt
 import time
 
 BASE_URL = "http://www.tng-project.org/api/TNG50-1"
-HEADERS = {"api-key": "4ff6dd78476d70518200141e4f2e2268"}
+HEADERS = {"api-key": ""}
 
 def get_group_m200(snapshot, grnr, max_retries=3):
     snapshot = int(snapshot)
