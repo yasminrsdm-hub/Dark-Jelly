@@ -9,7 +9,7 @@ import io
 
 # --- 1. CONFIGURATION ---
 
-API_KEY = "4ff6dd78476d70518200141e4f2e2268"
+API_KEY = ""
 
 SIMULATION = 'TNG100-1'
 BASE_URL = f'https://www.tng-project.org/api/{SIMULATION}/'
