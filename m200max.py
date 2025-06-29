@@ -1,7 +1,7 @@
 import requests
 
 def find_max_m200c(sim_name, snapshot, max_attempts=50000):
-    headers = {'api-key': '4ff6dd78476d70518200141e4f2e2268'}
+    headers = {'api-key': ''}
     max_m200c = 0
     max_grnr = None
 
