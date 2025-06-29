@@ -3,7 +3,7 @@ import pandas as pd
 from json.decoder import JSONDecodeError
 
 BASE_URL = "https://www.tng-project.org/api/TNG100-1"
-HEADERS = {"api-key": "4ff6dd78476d70518200141e4f2e2268"}
+HEADERS = {"api-key": ""}
 
 def get_group_number(snapshot, subhalo_id):
     url = f"{BASE_URL}/snapshots/{snapshot}/subhalos/{subhalo_id}/"
