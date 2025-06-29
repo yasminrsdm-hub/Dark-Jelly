@@ -5,7 +5,7 @@ import pandas as pd
 # --- Configuration ---
 
 base_url = 'http://www.tng-project.org/api/TNG50-1'
-token = '4ff6dd78476d70518200141e4f2e2268'  # your valid API token
+token = ''  # your valid API token
 
 headers = {
     'Accept': 'application/json',
