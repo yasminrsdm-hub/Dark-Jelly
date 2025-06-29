@@ -11,7 +11,7 @@ snapshot_range = range(67, 100)  # Snapshots 68 até 99
 
 # Função para obter a massa estelar via API
 BASE_URL = "http://www.tng-project.org/api/TNG50-1"
-HEADERS = {"api-key": "4ff6dd78476d70518200141e4f2e2268"}  
+HEADERS = {"api-key": ""}  
 
 def get_stellar_mass(snapshot, subhalo_id):
     url = f"{BASE_URL}/snapshots/{snapshot}/subhalos/{subhalo_id}/"
